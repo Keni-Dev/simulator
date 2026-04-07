@@ -1,0 +1,189 @@
+name: Jest Coverage Report
+
+on:
+  pull_request:
+    branches: [main, develop, development]
+  push:
+    branches: [main, develop, development]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  jest-coverage:
+    name: Run Jest with Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for git diff
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get changed files
+        id: changed-files
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD | grep -E '\.(ts|tsx|js|jsx)$' | tr '\n' ' ')
+            echo "files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+            echo "Changed files: $CHANGED_FILES"
+          fi
+
+      - name: Run tests with coverage on changed files
+        run: npm run test:ci
+        continue-on-error: true
+
+      - name: Generate coverage summary for changed lines only
+        if: github.event_name == 'pull_request'
+        id: coverage
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const { execSync } = require('child_process');
+
+          try {
+            const baseRef = '${{ github.event.pull_request.base.sha }}';
+            const headRef = '${{ github.event.pull_request.head.sha }}';
+            
+            console.log('Base:', baseRef, 'Head:', headRef);
+            const diff = execSync(\`git diff \${baseRef} \${headRef} --unified=0\`, { encoding: 'utf8' });
+            console.log('Diff output length:', diff.length);
+            
+            const changedLines = {};
+            let currentFile = null;
+            
+            diff.split('\n').forEach((line) => {
+              // Extract file path from diff header
+              if (line.startsWith('diff --git')) {
+                const match = line.match(/b\/(.+)$/);
+                if (match) {
+                  const file = match[1];
+                  if (file.match(/\.(ts|tsx|js|jsx)$/)) {
+                    currentFile = file;
+                    changedLines[file] = new Set();
+                  } else {
+                    currentFile = null;
+                  }
+                }
+              }
+              // Parse @@ markers for line numbers
+              else if (currentFile && line.startsWith('@@')) {
+                const lineMatch = line.match(/@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,(\\d+))? @@/);
+                if (lineMatch) {
+                  const start = parseInt(lineMatch[1]);
+                  const count = parseInt(lineMatch[2]) || 1;
+                  for (let j = 0; j < count; j++) {
+                    changedLines[currentFile].add(start + j);
+                  }
+                }
+              }
+            });
+            
+            // Log parsed results
+            Object.entries(changedLines).forEach(([file, lines]) => {
+              console.log(\`\${file}: \${lines.size} lines changed\`);
+              if (lines.size > 0) {
+                console.log(\`  First 5 lines: \${Array.from(lines).slice(0, 5).join(', ')}\`);
+              }
+            });
+            
+            if (!fs.existsSync('coverage/coverage-final.json')) {
+              fs.writeFileSync('coverage-summary.md', '## 📊 Coverage Report\n\nNo coverage data found. Tests may not have run.');
+              process.exit(0);
+            }
+            
+            const coverage = JSON.parse(fs.readFileSync('coverage/coverage-final.json', 'utf8'));
+            const cwd = process.cwd();
+            
+            let summary = '\n## 📊 Coverage Summary (Statements)\n\n';
+            summary += '| File | Covered/Total | Coverage % |\n';
+            summary += '|------|--------------|------------|\n';
+            
+            let totalCovered = 0, totalChanged = 0;
+            
+            Object.entries(changedLines).forEach(([file, changedLineSet]) => {
+              if (changedLineSet.size === 0) return;
+              
+              const fullPath = path.join(cwd, file);
+              const fileCov = coverage[fullPath];
+              
+              if (fileCov && fileCov.statementMap && fileCov.s) {
+                // Count statements that have changed lines
+                let coveredStatements = 0;
+                let changedStatements = 0;
+                
+                Object.entries(fileCov.statementMap).forEach(([stmtId, loc]) => {
+                  // Check if statement starts in changed lines
+                  const stmtStartLine = loc.start.line;
+                  if (changedLineSet.has(stmtStartLine)) {
+                    changedStatements++;
+                    if (fileCov.s[stmtId] > 0) {
+                      coveredStatements++;
+                    }
+                  }
+                });
+                
+                if (changedStatements > 0) {
+                  const pct = ((coveredStatements / changedStatements) * 100).toFixed(1);
+                  summary += \`| \${file} | \${coveredStatements}/\${changedStatements} | \${pct}% |\n\`;
+                  totalCovered += coveredStatements;
+                  totalChanged += changedStatements;
+                }
+              }
+            });
+            
+            if (totalChanged > 0) {
+              const avgCov = ((totalCovered / totalChanged) * 100).toFixed(1);
+              summary += '\n### 📈 Summary\n';
+              summary += \`- **Statements:** \${totalCovered}/\${totalChanged} covered\n\`;
+              summary += \`- **Coverage:** \${avgCov}%\n\`;
+            } else {
+              summary += '\n> No changed statements detected in coverage data\n';
+            }
+            
+            fs.writeFileSync('coverage-summary.md', summary);
+            console.log(summary);
+          } catch (e) {
+            console.error('Error:', e.message);
+            console.error(e.stack);
+            fs.writeFileSync('coverage-summary.md', '## Coverage Report\n\nError generating report');
+          }
+          "
+        continue-on-error: true
+
+      - name: Comment PR with coverage
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryFile = 'coverage-summary.md';
+
+            if (fs.existsSync(summaryFile)) {
+              const summary = fs.readFileSync(summaryFile, 'utf8');
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: summary
+              });
+            }
+        continue-on-error: true
+
+      - name: Upload coverage to artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30

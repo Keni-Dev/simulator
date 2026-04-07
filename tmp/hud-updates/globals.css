@@ -1,0 +1,94 @@
+@import "@fontsource/space-mono/400.css";
+@import "@fontsource/space-mono/700.css";
+@import "tailwindcss";
+
+/* ─── Design tokens ─────────────────────────────── */
+:root {
+  --bg-primary: #0a0a0c;
+  --bg-panel: rgba(20, 18, 15, 0.85);
+  --color-amber: #ffb627;
+  --color-amber-dim: #b8860b;
+  --color-positive: #f87171;
+  --color-negative: #22d3ee;
+  --color-neutral: #e8e4dc;
+  --color-muted: rgba(232, 228, 220, 0.4);
+  --font-mono: 'Space Mono', 'Courier New', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --glow-amber: 0 0 20px rgba(255, 182, 39, 0.3);
+  
+  /* Glassmorphism HUD tokens */
+  --hud-glass-bg: rgba(255, 255, 255, 0.05);
+  --hud-glass-border: rgba(255, 255, 255, 0.1);
+  --hud-glass-highlight: rgba(255, 255, 255, 0.08);
+  --hud-blur: 16px;
+  --hud-accent: #a78bfa;
+  --hud-text-primary: rgba(255, 255, 255, 0.92);
+  --hud-text-secondary: rgba(255, 255, 255, 0.55);
+  --hud-text-muted: rgba(255, 255, 255, 0.35);
+}
+
+/* ─── Reset / base ──────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-primary);
+  font-family: var(--font-mono);
+  color: var(--color-neutral);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Animations ──────────────────────────────── */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; text-shadow: 0 0 8px currentColor; }
+  50% { opacity: 0.7; text-shadow: 0 0 16px currentColor; }
+}
+
+@keyframes meter-pulse {
+  0%, 100% { box-shadow: 0 0 8px var(--color-amber); }
+  50% { box-shadow: 0 0 16px var(--color-amber); }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); opacity: 0; }
+  50% { opacity: 0.03; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* ─── HUD Glassmorphism Animations ──────────────── */
+@keyframes hud-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes hud-glow {
+  0%, 100% { 
+    box-shadow: 0 0 8px currentColor, 0 0 16px currentColor;
+    opacity: 1;
+  }
+  50% { 
+    box-shadow: 0 0 12px currentColor, 0 0 24px currentColor;
+    opacity: 0.85;
+  }
+}
+
+@keyframes contact-pulse {
+  0%, 100% { 
+    transform: scale(1);
+    box-shadow: 0 0 8px currentColor;
+  }
+  50% { 
+    transform: scale(1.1);
+    box-shadow: 0 0 16px currentColor, 0 0 24px currentColor;
+  }
+}
